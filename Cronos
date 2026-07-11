@@ -1,0 +1,322 @@
+-- CronosHub - FULL VERSION (FINAL + TRANSPARENCY SLIDER)
+
+if not game:IsLoaded() then game.Loaded:Wait() end
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UIS = game:GetService("UserInputService")
+local Camera = workspace.CurrentCamera
+local LocalPlayer = Players.LocalPlayer
+if not LocalPlayer then return end
+
+local repo = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
+local Library = loadstring(game:HttpGet(repo .. "Library.lua"))()
+local ThemeManager = loadstring(game:HttpGet(repo .. "addons/ThemeManager.lua"))()
+local SaveManager = loadstring(game:HttpGet(repo .. "addons/SaveManager.lua"))()
+
+local Window = Library:CreateWindow({
+Title = "VodkaHub",
+Footer = "discord.gg/dJJ3psbAxw",
+Icon = 95816097006870,
+NotifySide = "Right",
+ShowCustomCursor = true,
+AutoShow = true
+})
+
+local Tabs = {
+Main = Window:AddTab("Main","crosshair"),
+Visuals = Window:AddTab("Visuals","eye"),
+Player = Window:AddTab("Player","users"),
+Settings = Window:AddTab("UI Settings","settings")
+}
+
+local Toggles = Library.Toggles
+local Options = Library.Options
+
+-- SETTINGS
+Tabs.Settings:AddLeftGroupbox("Discord"):AddButton({
+Text="Copy Discord Invite",
+Func=function()
+setclipboard("https://discord.gg/dJJ3psbAxw")
+Library:Notify("Copied!")
+end
+})
+
+Tabs.Settings:AddRightGroupbox("PC Toggle")
+:AddLabel("Toggle UI")
+:AddKeyPicker("ToggleUIKeybind",{
+Default="RightShift",
+Mode="Toggle",
+Callback=function() Library:Toggle() end
+})
+
+-- ================= COMBAT =================
+
+local MainBox = Tabs.Main:AddLeftGroupbox("Combat")
+
+MainBox:AddToggle("Aimbot",{Text="Aimbot"})
+MainBox:AddToggle("TeamCheck",{Text="Team Check",Default=true})
+MainBox:AddToggle("WallCheck",{Text="Wall Check",Default=true})
+MainBox:AddToggle("FOVCircle",{Text="FOV Circle",Default=true})
+MainBox:AddToggle("LockFOV",{Text="Lock FOV To Center",Default=true})
+MainBox:AddToggle("EnableHitbox",{Text="Hitbox Expander"})
+
+MainBox:AddDropdown("TargetPart",{
+Values={"Head","HumanoidRootPart","Left Arm","Right Arm"},
+Default=1,
+Text="Aimbot Target"
+})
+
+local AimbotBox = Tabs.Main:AddRightGroupbox("Aimbot Settings")
+
+local fovCircle = Drawing.new("Circle")
+fovCircle.Color = Color3.new(1,1,1)
+fovCircle.Thickness = 2
+fovCircle.NumSides = 100
+fovCircle.Radius = 100
+fovCircle.Filled = false
+
+local Smoothness = 0.15
+local hitboxSize = 10
+local hitboxTransparency = 0.4
+
+AimbotBox:AddSlider("FOVRadius",{Text="FOV Radius",Min=20,Max=400,Default=100,
+Callback=function(v) fovCircle.Radius=v end})
+
+AimbotBox:AddSlider("Smoothness",{
+Text="Smoothness",
+Min=0,
+Max=1,
+Default=0.15,
+Rounding=2,
+Callback=function(v) Smoothness=v end
+})
+
+MainBox:AddSlider("HitboxSize",{Text="Hitbox Size",Min=2,Max=50,Default=10,
+Callback=function(v) hitboxSize=v end})
+
+MainBox:AddSlider("HitboxTransparency",{
+Text="Hitbox Transparency",
+Min=0,
+Max=1,
+Default=0.4,
+Rounding=2,
+Callback=function(v) hitboxTransparency=v end
+})
+
+RunService.RenderStepped:Connect(function()
+fovCircle.Visible = Toggles.FOVCircle.Value
+fovCircle.Position = Toggles.LockFOV.Value
+and Vector2.new(Camera.ViewportSize.X/2,Camera.ViewportSize.Y/2)
+or UIS:GetMouseLocation()
+end)
+
+local function GetPart(char,name)
+if name=="Left Arm" then
+return char:FindFirstChild("Left Arm") or char:FindFirstChild("LeftHand") or char:FindFirstChild("LeftUpperArm")
+elseif name=="Right Arm" then
+return char:FindFirstChild("Right Arm") or char:FindFirstChild("RightHand") or char:FindFirstChild("RightUpperArm")
+else
+return char:FindFirstChild(name)
+end
+end
+
+local function IsVisible(part)
+if not Toggles.WallCheck.Value then return true end
+local params = RaycastParams.new()
+params.FilterType = Enum.RaycastFilterType.Blacklist
+params.FilterDescendantsInstances = {LocalPlayer.Character, part.Parent}
+params.IgnoreWater = true
+return not workspace:Raycast(Camera.CFrame.Position, part.Position - Camera.CFrame.Position, params)
+end
+
+local function GetClosest()
+local closest,dist=nil,math.huge
+for _,plr in pairs(Players:GetPlayers()) do
+if plr~=LocalPlayer and plr.Character then
+if Toggles.TeamCheck.Value and plr.Team==LocalPlayer.Team then continue end
+local part=GetPart(plr.Character,Options.TargetPart.Value)
+if part and IsVisible(part) then
+local pos,vis=Camera:WorldToViewportPoint(part.Position)
+local diff=(Vector2.new(pos.X,pos.Y)-fovCircle.Position).Magnitude
+if vis and diff<fovCircle.Radius and diff<dist then
+closest,dist=plr,diff
+end
+end
+end
+end
+return closest
+end
+
+RunService.RenderStepped:Connect(function()
+if not Toggles.Aimbot.Value then return end
+local target=GetClosest()
+if target and target.Character then
+local part=GetPart(target.Character,Options.TargetPart.Value)
+if part then
+local dir=(part.Position-Camera.CFrame.Position).Unit
+Camera.CFrame=CFrame.new(
+Camera.CFrame.Position,
+Camera.CFrame.Position + Camera.CFrame.LookVector:Lerp(dir,Smoothness)
+)
+end
+end
+end)
+
+-- ================= VISIBLE ROOT HITBOX =================
+
+local stored = {}
+
+RunService.Heartbeat:Connect(function()
+for _,plr in pairs(Players:GetPlayers()) do
+if plr ~= LocalPlayer and plr.Character then
+local root = plr.Character:FindFirstChild("HumanoidRootPart")
+if root then
+if Toggles.EnableHitbox.Value then
+if not stored[plr] then
+stored[plr] = {
+Size=root.Size,
+Transparency=root.Transparency,
+Material=root.Material,
+Color=root.Color
+}
+end
+
+root.Size = Vector3.new(hitboxSize,hitboxSize,hitboxSize)  
+                root.Transparency = hitboxTransparency  
+                root.Material = Enum.Material.Neon  
+                root.Color = Color3.fromRGB(255,0,0)  
+                root.CanCollide = false  
+            else  
+                if stored[plr] then  
+                    root.Size = stored[plr].Size  
+                    root.Transparency = stored[plr].Transparency  
+                    root.Material = stored[plr].Material  
+                    root.Color = stored[plr].Color  
+                    stored[plr] = nil  
+                end  
+            end  
+        end  
+    end  
+end
+
+end)
+
+-- ================= ESP =================
+
+local VisualsBox = Tabs.Visuals:AddLeftGroupbox("ESP")
+
+VisualsBox:AddToggle("ESPEnabled",{Text="Enable ESP",Default=true})
+VisualsBox:AddToggle("ESPName",{Text="Show Name",Default=true})
+VisualsBox:AddToggle("ESPDistance",{Text="Show Distance",Default=true})
+
+local function CreateESP(plr)
+local text=Drawing.new("Text")
+text.Size=14
+text.Center=true
+text.Outline=true
+text.Color=Color3.new(1,1,1)
+
+RunService.RenderStepped:Connect(function()  
+    if Toggles.ESPEnabled.Value and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then  
+        local pos,vis=Camera:WorldToViewportPoint(plr.Character.HumanoidRootPart.Position)  
+        if vis then  
+            local label=""  
+            if Toggles.ESPName.Value then label=plr.Name.." " end  
+            if Toggles.ESPDistance.Value and LocalPlayer.Character then  
+                local dist=(LocalPlayer.Character.HumanoidRootPart.Position-  
+                    plr.Character.HumanoidRootPart.Position).Magnitude  
+                label=label.."["..math.floor(dist).."m]"  
+            end  
+            text.Text=label  
+            text.Position=Vector2.new(pos.X,pos.Y)  
+            text.Visible=true  
+        else text.Visible=false end  
+    else text.Visible=false end  
+end)
+
+end
+
+for _,p in pairs(Players:GetPlayers()) do
+if p~=LocalPlayer then CreateESP(p) end
+end
+Players.PlayerAdded:Connect(function(p)
+if p~=LocalPlayer then CreateESP(p) end
+end)
+
+-- ================= MOVEMENT =================
+
+local MoveBox = Tabs.Visuals:AddRightGroupbox("Movement")
+
+local noclipConn
+MoveBox:AddToggle("NoClip",{Text="NoClip"}):OnChanged(function(v)
+if v then
+noclipConn=RunService.Stepped:Connect(function()
+if LocalPlayer.Character then
+for _,part in pairs(LocalPlayer.Character:GetDescendants()) do
+if part:IsA("BasePart") then part.CanCollide=false end
+end
+end
+end)
+elseif noclipConn then
+noclipConn:Disconnect()
+noclipConn=nil
+end
+end)
+
+local infJump=false
+MoveBox:AddToggle("InfJump",{Text="Infinite Jump"}):OnChanged(function(v)
+infJump=v
+end)
+
+UIS.JumpRequest:Connect(function()
+if infJump and LocalPlayer.Character then
+LocalPlayer.Character:FindFirstChildOfClass("Humanoid"):ChangeState("Jumping")
+end
+end)
+
+MoveBox:AddSlider("Speed",{Text="WalkSpeed",Min=16,Max=100,Default=16,
+Callback=function(v)
+if LocalPlayer.Character then
+LocalPlayer.Character:FindFirstChildOfClass("Humanoid").WalkSpeed=v
+end
+end})
+
+-- ================= PLAYER TAB =================
+
+local PlayerBox = Tabs.Player:AddLeftGroupbox("Players")
+
+local function GetPlayersList()
+local list={}
+for _,plr in pairs(Players:GetPlayers()) do
+if plr~=LocalPlayer then table.insert(list,plr.Name) end
+end
+return list
+end
+
+PlayerBox:AddDropdown("PlayerList",{Values=GetPlayersList(),Default=1,Text="Select Player"})
+
+PlayerBox:AddButton({Text="Refresh List",Func=function()
+Options.PlayerList:SetValues(GetPlayersList())
+end})
+
+PlayerBox:AddToggle("Spectate",{Text="Spectate Player"}):OnChanged(function(v)
+local target=Players:FindFirstChild(Options.PlayerList.Value)
+if target and target.Character then
+Camera.CameraSubject = v and
+target.Character:FindFirstChildOfClass("Humanoid")
+or LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+end
+end)
+
+PlayerBox:AddButton({Text="Teleport to Player",Func=function()
+local target=Players:FindFirstChild(Options.PlayerList.Value)
+if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
+LocalPlayer.Character:SetPrimaryPartCFrame(target.Character.HumanoidRootPart.CFrame)
+end
+end})
+
+ThemeManager:SetLibrary(Library)
+SaveManager:SetLibrary(Library)
+SaveManager:BuildFolderTree()
+SaveManager:LoadAutoloadConfig()
